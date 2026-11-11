@@ -597,13 +597,19 @@ document.addEventListener("keydown",e=>{if(NET.role==="phone"||NET.role==="choos
   if(S.pending.answer===null){const k="abcd1234".indexOf(e.key.toLowerCase());if(k>=0)answer(k%4)}
   else if(e.key==="Enter"||e.key===" "){e.preventDefault();nextTurn()}});
 
-/* ---------- Phone mode ---------- */
-const GAME_URL="https://claude.ai/artifact/BTzRMGvFTSckFsztt8bARP";
-const ROLE_KEY=LS+".role", TEAM_KEY=LS+".team";
-const NET={role:"local",room:null,db:null,live:null,peers:[],pub:null,phoneErr:"",myTeam:null,aim:null,pick:null,sent:0,showPhones:false,qr:null,canEdit:false};
+/* ---------- Phone mode (website version: peer-to-peer, no accounts) ---------- */
+const PEER_SRC=["https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js","https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"];
+const QR_SRC=["https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js","https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"];
+const HOST_KEY=LS+".hostId", TEAM_KEY=LS+".team";
+const JOIN_ID=(()=>{try{return new URLSearchParams(location.search).get("join")}catch(e){return null}})();
+const NET={role:JOIN_ID?"phone":"host",peer:null,conns:[],conn:null,ready:false,err:"",pub:null,phoneErr:"",myTeam:null,aim:null,pick:null,sent:0,showPhones:false,qr:null,canEdit:false,hostId:null,peers:[]};
 try{const v=localStorage.getItem(TEAM_KEY);if(v!=null&&v!=="")NET.myTeam=+v}catch(e){}
-function use(n){try{return window.claude&&typeof window.claude.use==="function"?Promise.resolve(window.claude.use(n)).catch(()=>null):Promise.resolve(null)}catch(e){return Promise.resolve(null)}}
 const unesc=h=>String(h).replace(/<[^>]+>/g,"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&amp;/g,"&");
+const isFile=location.protocol==="file:";
+const joinUrl=()=>NET.hostId?location.origin+location.pathname+"?join="+encodeURIComponent(NET.hostId):"";
+
+function loadScript(src){return new Promise((ok,no)=>{const sc=document.createElement("script");sc.src=src;sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)})}
+const loadAny=list=>list.reduce((p,src)=>p.catch(()=>loadScript(src)),Promise.reject());
 
 // --- what the TV shares: only what everyone can already see on the TV ---
 function pubState(){
@@ -612,47 +618,46 @@ function pubState(){
   base.teams=S.teams.map(t=>({name:t.name,color:t.color,shots:t.shot.map((v,i)=>v===2&&t.ships[t.grid[i]].sunk?3:v).join(""),
     left:t.ships.filter(x=>!x.sunk).length,total:t.ships.length,hits:t.hits,right:t.right,tries:t.tries}));
   const p=S.pending;
-  base.pending=p?{id:p.id||0,target:p.target,cell:p.cell,text:p.q.text,opts:p.q.opts,deadline:p.deadline||0,
+  base.pending=p?{id:p.id||0,target:p.target,cell:p.cell,text:p.q.text,opts:p.q.opts,leftMs:p.deadline?Math.max(0,p.deadline-Date.now()):0,
     answered:p.answer!==null,answer:p.answer,correct:p.answer!==null?p.q.correct:null,outcome:p.outcome||null,ship:p.ship||null,eliminated:!!p.eliminated}:null;
   base.log=S.log.slice(0,4).map(unesc);
   return base;
 }
-let liveBusy=false,liveDirty=false,lastLive="";
-async function pushLive(){
-  if(NET.role!=="host"||!NET.live)return;
-  if(liveBusy){liveDirty=true;return}
-  const st=pubState(),js=JSON.stringify(st);if(js===lastLive)return;
-  liveBusy=true;lastLive=js;
-  try{await NET.live.set(st)}catch(e){lastLive="";console.warn("Could not share game state",e)}
-  liveBusy=false;if(liveDirty){liveDirty=false;pushLive()}
+let lastLive="";
+function pushLive(force){
+  if(NET.role!=="host"||!NET.conns.length)return;
+  const st=pubState(),js=JSON.stringify(st);if(!force&&js===lastLive)return;lastLive=js;
+  NET.conns.forEach(c=>{try{if(c.open)c.send(st)}catch(e){}});
 }
 
 // --- QR code ---
-function loadScript(src){return new Promise((ok,no)=>{const sc=document.createElement("script");sc.src=src;sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)})}
 let qrLoading=null;
-function loadQR(){if(!qrLoading)qrLoading=loadScript("https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js")
-  .catch(()=>loadScript("https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"))
-  .then(()=>{try{const q=qrcode(0,"M");q.addData(GAME_URL);q.make();const n=q.getModuleCount();let d="";
+function makeQR(){
+  if(!NET.hostId||typeof qrcode!=="function")return;
+  try{const q=qrcode(0,"M");q.addData(joinUrl());q.make();const n=q.getModuleCount();let d="";
     for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))d+=`M${c+2} ${r+2}h1v1h-1z`;
-    NET.qr=`<svg viewBox="0 0 ${n+4} ${n+4}" shape-rendering="crispEdges" role="img" aria-label="QR code for the game link"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`}catch(e){NET.qr=""}})
-  .catch(()=>{NET.qr=""}).then(refreshPhones);return qrLoading}
-const phoneCount=()=>NET.peers.filter(p=>!p.isMe&&p.presence&&typeof p.presence.team==="number").length;
+    NET.qr=`<svg viewBox="0 0 ${n+4} ${n+4}" shape-rendering="crispEdges" role="img" aria-label="QR code to join the game"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`}catch(e){NET.qr=""}
+}
+function loadQR(){if(!qrLoading)qrLoading=loadAny(QR_SRC).then(makeQR).catch(()=>{NET.qr=""}).then(refreshPhones);return qrLoading}
+const phoneCount=()=>NET.conns.filter(c=>c.open&&typeof c.team==="number").length;
 function phonePanel(){
   const teams=S.phase==="game"?S.teams:S.names.slice(0,S.n).map((nm,i)=>({name:nm.trim()||("Team "+(i+1)),color:COLORS[i]}));
-  const byTeam=teams.map((_,i)=>NET.peers.filter(p=>!p.isMe&&p.presence&&p.presence.team===i).length);
-  const ready=!!(NET.room&&NET.live);
+  const byTeam=teams.map((_,i)=>NET.conns.filter(c=>c.open&&c.team===i).length);
+  let box,status;
+  if(isFile){box="Phone play works once the game is online (for example on GitHub Pages).";status=`<p class="notice">You opened this file from your computer, so phones can't reach it. Upload it and open the online address on this screen.</p>`}
+  else if(NET.err){box="Phone play is unavailable right now.";status=`<p class="notice" style="color:var(--bad)">${esc(NET.err)}</p>`}
+  else if(!NET.ready){box="Connecting…";status=`<p class="notice">Setting up the connection for phones…</p>`}
+  else{box=NET.qr?NET.qr:NET.qr===""?"QR code unavailable. Use the link.":"Loading QR code…";
+    status=`<span class="linkbox">${esc(joinUrl())}</span><div class="pchips">${teams.map((t,i)=>`<span class="pchip"><span class="dot" style="background:${t.color}"></span>${esc(t.name)} · ${byTeam[i]} 📱</span>`).join("")}</div>`}
   return `<div class="qrwrap phonepanel">
-    <div class="qrbox">${NET.qr?NET.qr:NET.qr===""?"QR code unavailable. Use the link.":"Loading QR code…"}</div>
+    <div class="qrbox">${box}</div>
     <div class="qrinfo">
       <ol>
-        <li>In the <b>Share</b> menu, invite each player so they can <b>interact</b> (view-only can't play).</li>
-        <li>Players scan the code signed in to <b>claude.ai</b> and pick their team.</li>
-        <li>On their turn they choose a square and answer on the phone. This screen updates live.</li>
+        <li>Players scan the code with their phone camera. <b>No account needed.</b></li>
+        <li>Each phone picks a team. Several phones can share a team.</li>
+        <li>On their turn they choose a square and answer on the phone. Keep this screen open: it runs the game.</li>
       </ol>
-      <span class="linkbox">${esc(GAME_URL)}</span>
-      ${ready?`<div class="pchips">${teams.map((t,i)=>`<span class="pchip"><span class="dot" style="background:${t.color}"></span>${esc(t.name)} · ${byTeam[i]} 📱</span>`).join("")}</div>`
-        :`<p class="notice" style="color:var(--bad)">Live connection isn't available on this screen right now, so phones can't connect.</p>`}
-      <button class="linkbtn" id="switchrole" style="align-self:flex-start">Use this device as a player instead</button>
+      ${status}
     </div></div>`;
 }
 function refreshPhones(){
@@ -660,71 +665,100 @@ function refreshPhones(){
   document.querySelectorAll(".phonepanel").forEach(el=>{el.outerHTML=phonePanel()});
   document.querySelectorAll(".phonecount").forEach(el=>{el.textContent=phoneCount()});
 }
+function renderChoose(){renderSetup()}
 
-// --- role ---
-function renderChoose(){
-  app.innerHTML=`<div class="phone" style="margin-top:6vh">
-    <span class="eyebrow">Quiz Battleship</span>
-    <h1>How is this <span>screen</span> used?</h1>
-    <p class="notice">You can edit this game, so you can run it as the main screen or play from this device. Your choice is remembered on this device.</p>
-    <button class="pteam" id="asHost"><span style="font-size:1.6rem">📺</span><span>Main screen (TV)<br><span class="notice" style="font-weight:500;font-size:.9rem">Shows all boards and runs the game</span></span></button>
-    <button class="pteam" id="asPhone"><span style="font-size:1.6rem">📱</span><span>Player phone<br><span class="notice" style="font-weight:500;font-size:.9rem">Pick a team, aim and answer</span></span></button>
-  </div>`;
+// --- host (TV) ---
+function newHostId(){return "qbship-"+Math.random().toString(36).slice(2,8)+Math.random().toString(36).slice(2,6)}
+function handleAction(conn,d){
+  conn.seen=Date.now();
+  if(!d||typeof d!=="object"||d.t==="ping")return;
+  if(d.t==="team"){conn.team=Number.isInteger(d.team)?d.team:null;refreshPhones();return}
+  if(d.t==="fire"){if(S.phase!=="game"||S.over||S.pending||+d.team!==S.turn)return;const ti=+d.target,cell=+d.cell;
+    if(!S.teams[ti]||!Number.isInteger(cell)||cell<0||cell>=S.teams[ti].shot.length)return;fire(ti,cell);return}
+  const p=S.pending;
+  if(d.t==="answer"){if(!p||p.answer!==null||+d.team!==S.turn||d.id!==p.id)return;const k=+d.k;if(Number.isInteger(k)&&k>=0&&k<4)answer(k);return}
+  if(d.t==="next"){if(!p||p.answer===null||+d.team!==S.turn||d.id!==p.id)return;nextTurn()}
 }
-function setRole(role){try{localStorage.setItem(ROLE_KEY,role)}catch(e){}startRole(role)}
-let hostWired=false,phoneWired=false,phoneTimer=null;
-function startRole(role){
-  NET.role=role;
-  if(role==="host"){
-    if(NET.db&&!NET.live)NET.live=NET.db.doc("live/state");
-    if(NET.room&&!hostWired){hostWired=true;
-      const onPhone=(topic,fn)=>NET.room.on(topic,m=>{if(m.sameTab||NET.role!=="host")return;try{fn(m.data||{})}catch(e){}});
-      onPhone("fire",d=>{if(S.phase!=="game"||S.over||S.pending||+d.team!==S.turn)return;const ti=+d.target,cell=+d.cell;
-        if(!S.teams[ti]||!Number.isInteger(cell)||cell<0||cell>=S.teams[ti].shot.length)return;fire(ti,cell)});
-      onPhone("answer",d=>{const p=S.pending;if(!p||p.answer!==null||+d.team!==S.turn||d.id!==p.id)return;const k=+d.k;if(Number.isInteger(k)&&k>=0&&k<4)answer(k)});
-      onPhone("next",d=>{const p=S.pending;if(!p||p.answer===null||+d.team!==S.turn||d.id!==p.id)return;nextTurn()});
-      NET.room.onPeers(c=>{NET.peers=c.peers;refreshPhones()});
-    }
-    loadQR();lastLive="";render();pushLive();
-  }else{
-    clearInterval(tick);
-    if(!NET.room||!NET.db){NET.phoneErr="This device can't join live games here. Open the game link on claude.ai while signed in.";render();return}
-    if(!NET.live)NET.live=NET.db.doc("live/state");
-    if(!phoneWired){phoneWired=true;
-      let waiting=setTimeout(()=>{if(!NET.pub){NET.phoneErr="Can't reach the game yet. Make sure the main screen has the game open.";render()}},10000);
-      NET.live.onSnapshot(sn=>{if(!sn.fromCache){clearTimeout(waiting)}
-        NET.phoneErr="";const prev=NET.pub;NET.pub=sn.exists?sn.data():null;
-        if(!prev||!NET.pub||prev.game!==NET.pub.game||prev.turn!==NET.pub.turn||JSON.stringify(prev.pending)!==JSON.stringify(NET.pub.pending)){NET.sent=0}
-        if(NET.pub&&NET.pub.pending)NET.pick=null;
-        render()},
-        ()=>{clearTimeout(waiting);NET.phoneErr="Lost the connection to the game. Reload the page to try again.";render()});
-      phoneTimer=setInterval(()=>{const el=document.getElementById("ptime"),p=NET.pub&&NET.pub.pending;if(el&&p&&p.deadline){el.textContent=Math.max(0,Math.ceil((p.deadline-Date.now())/1000))+"s"}},500);
-    }
-    if(NET.myTeam!=null)NET.room.presence({team:NET.myTeam}).catch(()=>{});
-    render();
-  }
+let hostBeat=null;
+function startHost(tries=0){
+  if(isFile||typeof Peer!=="function")return;
+  let id=null;try{id=localStorage.getItem(HOST_KEY)}catch(e){}
+  if(!id||tries>0){id=newHostId();try{localStorage.setItem(HOST_KEY,id)}catch(e){}}
+  NET.hostId=id;NET.ready=false;NET.err="";
+  const peer=new Peer(id);NET.peer=peer;
+  peer.on("open",()=>{NET.ready=true;makeQR();refreshPhones()});
+  peer.on("connection",conn=>{
+    conn.team=null;conn.seen=Date.now();NET.conns.push(conn);
+    conn.on("open",()=>{try{conn.send(pubState())}catch(e){}refreshPhones()});
+    conn.on("data",d=>{try{handleAction(conn,d)}catch(e){}});
+    const drop=()=>{NET.conns=NET.conns.filter(c=>c!==conn);refreshPhones()};
+    conn.on("close",drop);conn.on("error",drop);
+  });
+  peer.on("disconnected",()=>{try{peer.reconnect()}catch(e){}});
+  if(!hostBeat)hostBeat=setInterval(()=>{const now=Date.now();
+    NET.conns.filter(c=>now-c.seen>15000).forEach(c=>{try{c.close()}catch(e){}});
+    const before=NET.conns.length;NET.conns=NET.conns.filter(c=>now-c.seen<=15000);if(NET.conns.length!==before)refreshPhones();
+    NET.conns.forEach(c=>{try{if(c.open)c.send({hb:1})}catch(e){}})},4000);
+  peer.on("error",e=>{
+    if(e&&e.type==="unavailable-id"&&tries<3){try{peer.destroy()}catch(x){}startHost(tries+1);return}
+    if(e&&(e.type==="peer-unavailable"))return;
+    NET.err="Couldn't set up phone play ("+((e&&e.type)||"network")+"). Check the internet connection and reload.";refreshPhones();
+  });
 }
 
-// --- phone screen ---
-function phoneSend(topic,data){
+// --- phone ---
+let phoneTimer=null,retryTimer=null,phonePeerReady=false;
+function startPhone(){
+  if(typeof Peer!=="function"){NET.phoneErr="Couldn't load the connection library. Check your internet and reload.";render();return}
+  const peer=new Peer();NET.peer=peer;
+  const connect=()=>{
+    clearTimeout(retryTimer);
+    const conn=peer.connect(JOIN_ID,{reliable:true});NET.conn=conn;
+    const failTimer=setTimeout(()=>{if(!conn.open){NET.phoneErr="Can't reach the game. Make sure it's open on the main screen. Retrying…";render();try{conn.close()}catch(e){}retryTimer=setTimeout(connect,3000)}},10000);
+    conn.on("open",()=>{clearTimeout(failTimer);NET.lastData=Date.now();NET.phoneErr="";if(NET.myTeam!=null)conn.send({t:"team",team:NET.myTeam});render()});
+    conn.on("data",d=>{
+      NET.lastData=Date.now();
+      if(!d||typeof d!=="object"||d.hb)return;
+      if(d.pending&&d.pending.leftMs)d.pending.deadline=Date.now()+d.pending.leftMs;else if(d.pending)d.pending.deadline=0;
+      const prev=NET.pub;NET.pub=d;
+      if(!prev||prev.game!==d.game||prev.turn!==d.turn||JSON.stringify(prev.pending&&{...prev.pending,deadline:0,leftMs:0})!==JSON.stringify(d.pending&&{...d.pending,deadline:0,leftMs:0}))NET.sent=0;
+      if(d.pending)NET.pick=null;
+      render();
+    });
+    conn.on("close",()=>{clearTimeout(failTimer);if(NET.conn!==conn)return;NET.phoneErr="Lost the connection to the game. Reconnecting…";render();retryTimer=setTimeout(connect,3000)});
+  };
+  peer.on("open",()=>{phonePeerReady=true;connect()});
+  peer.on("disconnected",()=>{try{peer.reconnect()}catch(e){}});
+  peer.on("error",e=>{
+    if(e&&e.type==="peer-unavailable"){NET.phoneErr="The game isn't running at this code. Ask the host to open the game and scan the QR code again. Retrying…";render();clearTimeout(retryTimer);retryTimer=setTimeout(connect,4000);return}
+    if(!phonePeerReady){NET.phoneErr="Couldn't connect ("+((e&&e.type)||"network")+"). Check your internet and reload.";render()}
+  });
+  setInterval(()=>{const c=NET.conn;if(!c||!c.open)return;
+    try{c.send({t:"ping"})}catch(e){}
+    if(Date.now()-(NET.lastData||0)>12000){NET.conn=null;try{c.close()}catch(e){}NET.phoneErr="Lost the connection to the game. Reconnecting…";render();clearTimeout(retryTimer);retryTimer=setTimeout(connect,1000)}},4000);
+  phoneTimer=setInterval(()=>{const el=document.getElementById("ptime"),p=NET.pub&&NET.pub.pending;if(el&&p&&p.deadline){el.textContent=Math.max(0,Math.ceil((p.deadline-Date.now())/1000))+"s"}},500);
+}
+function phoneSend(data){
+  if(!NET.conn||!NET.conn.open){NET.phoneErr="Not connected yet. Wait a moment and try again.";render();return}
   NET.sent=Date.now();render();
-  NET.room.emit(topic,data).catch(e=>{NET.sent=0;
-    NET.phoneErr=e&&e.code==="not_permitted"?"You can watch, but not play. Ask the host to give you access to interact with the game (Share menu).":"Couldn't send that. Try again.";
-    render();setTimeout(()=>{if(NET.phoneErr){NET.phoneErr="";render()}},6000)});
+  try{NET.conn.send(data)}catch(e){NET.sent=0;NET.phoneErr="Couldn't send that. Try again.";render();return}
   setTimeout(()=>{if(NET.sent&&Date.now()-NET.sent>=7000){NET.sent=0;render()}},7100);
 }
 function phoneClick(b){
   const P=NET.pub;
-  if(b.dataset.join!=null){NET.myTeam=+b.dataset.join;try{localStorage.setItem(TEAM_KEY,NET.myTeam)}catch(e){};NET.room&&NET.room.presence({team:NET.myTeam}).catch(()=>{});render();return}
-  if(b.id==="changeteam"){NET.myTeam=null;try{localStorage.removeItem(TEAM_KEY)}catch(e){};NET.room&&NET.room.presence({team:null}).catch(()=>{});render();return}
-  if(b.id==="switchhost"){setRole("host");return}
+  if(b.dataset.join!=null){NET.myTeam=+b.dataset.join;try{localStorage.setItem(TEAM_KEY,NET.myTeam)}catch(e){}
+    if(NET.conn&&NET.conn.open)NET.conn.send({t:"team",team:NET.myTeam});render();return}
+  if(b.id==="changeteam"){NET.myTeam=null;try{localStorage.removeItem(TEAM_KEY)}catch(e){}
+    if(NET.conn&&NET.conn.open)NET.conn.send({t:"team",team:null});render();return}
   if(!P||NET.sent)return;
   if(b.dataset.aim!=null){NET.aim=+b.dataset.aim;NET.pick=null;render();return}
   if(b.dataset.pcell!=null){NET.pick=+b.dataset.pcell;render();return}
-  if(b.id==="pfire"&&NET.pick!=null){phoneSend("fire",{team:NET.myTeam,target:NET.aim,cell:NET.pick});return}
-  if(b.dataset.popt!=null&&P.pending){phoneSend("answer",{team:NET.myTeam,id:P.pending.id,k:+b.dataset.popt});return}
-  if(b.id==="pnext"&&P.pending){phoneSend("next",{team:NET.myTeam,id:P.pending.id});return}
+  if(b.id==="pfire"&&NET.pick!=null){phoneSend({t:"fire",team:NET.myTeam,target:NET.aim,cell:NET.pick});return}
+  if(b.dataset.popt!=null&&P.pending){phoneSend({t:"answer",team:NET.myTeam,id:P.pending.id,k:+b.dataset.popt});return}
+  if(b.id==="pnext"&&P.pending){phoneSend({t:"next",team:NET.myTeam,id:P.pending.id});return}
 }
+function setRole(){}
+
 const pcoord=(i,G)=>ROWS[Math.floor(i/G)]+(i%G+1);
 function renderPhone(){
   const P=NET.pub,L="ABCD";
@@ -776,18 +810,16 @@ function renderPhone(){
 }
 
 async function initNet(){
-  const [user,room,db]=await Promise.all([use("user"),use("room"),use("db")]);
-  if(!user&&!room&&!db)return; // a plain copy of the page: keep single-screen play
-  NET.room=room;NET.db=db;NET.canEdit=user?!!(await user.canEdit()):false;
-  let saved=null;try{saved=localStorage.getItem(ROLE_KEY)}catch(e){}
-  if(!NET.canEdit)startRole("phone");
-  else if(saved==="host"||saved==="phone")startRole(saved);
-  else{NET.role="choose";render()}
+  render();
+  if(NET.role==="phone"){try{await loadAny(PEER_SRC)}catch(e){}startPhone();return}
+  loadQR();
+  if(isFile)return;
+  try{await loadAny(PEER_SRC)}catch(e){NET.err="Couldn't load the connection library. Check the internet connection and reload."}
+  startHost();refreshPhones();
 }
 
 function boot(data){if(data&&data.S)S=data.S;render();startTimer()}
-window.claude?.hot?.snapshot?.(()=>({S}));
-window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+boot({});
 initNet();
 </script>
 
