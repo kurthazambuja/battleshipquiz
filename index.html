@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Quiz Battleship</title>
+<meta name="description" content="A trivia party game: answer questions to fire at the other teams' hidden fleets. Built for a TV or projector.">
+<meta name="theme-color" content="#0A1422">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230A1422'/%3E%3Cpath d='M14 56 Q20 40 40 40 L66 40 Q84 40 88 56 Q80 70 60 70 L36 70 Q20 70 14 56Z' fill='%23A9BCCF'/%3E%3Ccircle cx='50' cy='55' r='12' fill='%23FF5A3C'/%3E%3C/svg%3E">
+<style>body{margin:0;padding:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;900&family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: night-watch chart table. Fleet strip on top, one large target grid, question card as an overlay. Single dark look for TVs and projectors. */
+:root{
+  color-scheme: dark;
+  --ink:#0A1422; --deep:#102238; --panel:#152B45; --grid:#24405F; --line:#36597F;
+  --foam:#E3EDF6; --mute:#8FA7C2; --brass:#E8B04B; --hit:#FF5A3C; --ok:#46D19E; --bad:#FF6B6B;
+  --f-display:"Big Shoulders Stencil Display", Impact, "Arial Narrow", sans-serif;
+  --f-body:"Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{background:var(--ink);color:var(--foam);font-family:var(--f-body);font-size:16px;line-height:1.45;
+  background-image:radial-gradient(circle at 50% -20%, #18355A 0%, transparent 60%);}
+.wrap{max-width:1600px;margin:0 auto;padding-block:20px 40px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));
+  display:flex;flex-direction:column;gap:18px}
+h1{font-family:var(--f-display);font-weight:900;font-size:clamp(2.2rem,6vw,3.6rem);letter-spacing:.02em;line-height:.95;margin:0;text-transform:uppercase;text-wrap:balance}
+h1 span{color:var(--brass)}
+.eyebrow{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--mute)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+.btn{background:var(--brass);color:#1A1203;border:0;border-radius:6px;padding:12px 22px;font-weight:700;letter-spacing:.03em}
+.btn:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;color:var(--foam);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--mute)}
+.btn.danger{background:var(--bad);color:#2A0606}
+
+/* Setup */
+.setup{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:28px;align-items:start}
+@media (max-width:820px){.setup{grid-template-columns:1fr}}
+.card{background:var(--deep);border:1px solid var(--grid);border-radius:10px;padding:22px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.rules{margin:0;padding-left:1.1em;display:flex;flex-direction:column;gap:6px;color:var(--mute)}
+.rules b{color:var(--foam)}
+.stepper{display:flex;align-items:center;gap:14px}
+.stepper button{width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--panel);font-size:1.4rem;font-weight:700}
+.stepper button:disabled{opacity:.35;cursor:default}
+.btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+.picker{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.picker{grid-template-columns:1fr}}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:8px 10px;min-width:0}
+.prow.on{border-color:var(--line)}
+.prow:not(.on) .pname{opacity:.55}
+.pname{display:flex;align-items:center;gap:8px;min-width:0;font-weight:600}
+.pname>span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.hull{display:flex;gap:2px;flex:none}
+.hull i{width:9px;height:9px;border-radius:2px;background:var(--foam)}
+.plen{font-family:var(--f-mono);font-size:.7rem;color:var(--mute);flex:none}
+.pstep{display:flex;align-items:center;gap:8px;flex:none}
+.pstep button{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--deep);font-weight:700;font-size:1.1rem;padding:0}
+.pstep button:disabled{opacity:.35;cursor:default}
+.pstep output{font-family:var(--f-mono);font-weight:700;min-width:1.5ch;text-align:center}
+.ptotal{grid-column:1/-1;font-family:var(--f-mono);font-size:.78rem;color:var(--mute)}
+.ptotal.warn{color:var(--bad)}
+.stepper output{font-family:var(--f-display);font-size:3rem;font-weight:900;min-width:2ch;text-align:center;line-height:1}
+.names{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:480px){.names{grid-template-columns:1fr}}
+.names label{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--grid);border-radius:6px;padding:4px 10px}
+.names input{flex:1;min-width:0;background:transparent;border:0;color:var(--foam);font:inherit;font-weight:600;padding:8px 0}
+.dot{width:12px;height:12px;border-radius:50%;flex:none}
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg button{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:8px 14px;font-weight:600}
+.seg button[aria-pressed="true"]{background:var(--brass);color:#1A1203;border-color:var(--brass)}
+
+/* Game */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.top h1{font-size:clamp(1.8rem,4.5vw,2.6rem)}
+.fleet{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.chip{position:relative;text-align:left;background:var(--deep);border:2px solid var(--grid);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.chip .nm{display:flex;align-items:center;gap:8px;font-weight:700;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.chip .meta{display:flex;justify-content:space-between;align-items:center;font-family:var(--f-mono);font-size:.75rem;color:var(--mute)}
+.pips{display:flex;gap:3px}
+.pip{width:14px;height:6px;border-radius:2px;background:var(--foam)}
+.pip.sunk{background:var(--grid)}
+.chip.turn{border-color:var(--brass);box-shadow:0 0 0 3px rgba(232,176,75,.18)}
+.chip.target{border-color:var(--hit)}
+.chip.out{opacity:.4}
+.tag{position:absolute;top:-10px;right:10px;font-family:var(--f-mono);font-size:.64rem;letter-spacing:.14em;padding:2px 7px;border-radius:4px;font-weight:700}
+.tag.fire{background:var(--brass);color:#1A1203}
+.tag.aim{background:var(--hit);color:#fff}
+.tag.dead{background:var(--grid);color:var(--mute)}
+
+.seas{display:grid;gap:16px;grid-template-columns:repeat(var(--cols,3),minmax(0,1fr))}
+@media (max-width:1000px){.seas{grid-template-columns:repeat(min(var(--cols,3),2),minmax(0,1fr))}}
+@media (max-width:560px){.seas{grid-template-columns:1fr}}
+.boardbox{position:relative;display:flex;flex-direction:column;gap:8px;min-width:0;background:var(--deep);border:2px solid var(--grid);border-radius:10px;padding:12px}
+.boardbox.turn{border-color:var(--brass);box-shadow:0 0 0 3px rgba(232,176,75,.18)}
+.boardbox.mine .board{opacity:.55}
+.boardbox.out{opacity:.45}
+.boardbox .tag{top:-11px}
+.boardhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px}
+.boardhead h2{margin:0;display:flex;align-items:center;gap:8px;min-width:0;font-family:var(--f-display);font-weight:700;font-size:1.5rem;letter-spacing:.03em;text-transform:uppercase;line-height:1}
+.boardhead h2 span:last-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.boardmeta{display:flex;align-items:center;gap:10px;font-family:var(--f-mono);font-size:.72rem;color:var(--mute)}
+.board{container-type:inline-size;display:grid;grid-template-columns:5.5cqi repeat(var(--g,8),minmax(0,1fr));gap:3px;width:100%}
+.lab{font-family:var(--f-mono);font-size:max(8px,calc(29cqi / var(--g,8)));color:var(--mute);display:flex;align-items:center;justify-content:center}
+.cell{aspect-ratio:1;max-width:100%;border:1px solid var(--line);border-radius:3px;background:
+  linear-gradient(135deg, rgba(255,255,255,.04), transparent 60%), var(--panel);
+  display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:max(7px,calc(26cqi / var(--g,8)));color:transparent;padding:0;transition:transform .12s, background .2s}
+.cell:disabled{cursor:default}
+.cell.open:not(:disabled):hover{transform:scale(1.08);border-color:var(--brass);color:var(--brass)}
+.cell{position:relative;overflow:hidden}
+.cell>svg{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.cell.water{background:#0C2A44;border-color:#1E4C73;cursor:default}
+.cell.hit{background:#14395C;border-color:var(--hit);cursor:default}
+.cell.sunk{background:#3A1A16;border-color:#9C3A26}
+.cell.ghost{background:var(--panel)}
+.cell.ghost>svg{opacity:.5}
+.cell.just{animation:pop .45s ease-out}
+@keyframes pop{0%{transform:scale(.6)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+.sw.svg{background:none;border:0;width:20px;height:20px;border-radius:3px;overflow:hidden}
+.sw.svg svg{width:100%;height:100%;display:block}
+.cell.flash{animation:flash .6s}
+@keyframes flash{50%{background:var(--bad)}}
+
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.bottom{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:start}
+@media (max-width:700px){.bottom{grid-template-columns:1fr}}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:.92rem;max-height:180px;overflow:auto}
+.log li{display:flex;gap:8px;align-items:baseline;color:var(--mute)}
+.log li b{color:var(--foam)}
+.log .k{font-family:var(--f-mono);font-size:.72rem;flex:none}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem;color:var(--mute)}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:3px;display:inline-block}
+.banner{background:var(--deep);border:1px solid var(--brass);border-radius:10px;padding:18px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}
+.banner strong{font-family:var(--f-display);font-size:2rem;text-transform:uppercase;letter-spacing:.03em}
+
+/* Question overlay */
+.overlay{position:fixed;inset:0;background:rgba(5,10,18,.82);display:flex;align-items:center;justify-content:center;z-index:20;
+  padding:max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));overflow:auto}
+.qcard{width:100%;max-width:760px;background:var(--deep);border:1px solid var(--line);border-radius:12px;padding:clamp(18px,4vw,32px);display:flex;flex-direction:column;gap:18px}
+.qmeta{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.qtext{font-size:clamp(1.3rem,3.2vw,2rem);font-weight:700;line-height:1.25;margin:0;text-wrap:balance}
+.opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (max-width:560px){.opts{grid-template-columns:1fr}}
+.opt{display:flex;align-items:center;gap:12px;text-align:left;background:var(--panel);border:2px solid var(--line);border-radius:8px;padding:14px 16px;font-size:1.1rem;font-weight:600;min-width:0}
+.opt .l{font-family:var(--f-mono);color:var(--brass);flex:none}
+.opt:not(:disabled):hover{border-color:var(--brass)}
+.opt.right{border-color:var(--ok);background:rgba(70,209,158,.16)}
+.opt.wrong{border-color:var(--bad);background:rgba(255,107,107,.16)}
+.opt:disabled{cursor:default}
+.timer{height:6px;background:var(--panel);border-radius:3px;overflow:hidden}
+.timer i{display:block;height:100%;background:var(--brass);transition:width 1s linear}
+.result{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--grid);padding-top:16px}
+.result .big{font-family:var(--f-display);font-weight:900;font-size:clamp(2rem,6vw,3rem);text-transform:uppercase;line-height:1}
+.big.hit{color:var(--hit)} .big.water{color:var(--mute)} .big.miss{color:var(--bad)}
+.result p{margin:4px 0 0;color:var(--mute)}
+/* Phone mode */
+.qrwrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center}
+.qrbox{width:180px;max-width:100%;aspect-ratio:1;background:#fff;border-radius:8px;padding:8px;flex:none;display:flex;align-items:center;justify-content:center;color:#333;font-size:.8rem;text-align:center}
+.qrbox svg{width:100%;height:100%;display:block}
+.qrinfo{display:flex;flex-direction:column;gap:8px;min-width:0;flex:1 1 220px}
+.qrinfo ol{margin:0;padding-left:1.1em;color:var(--mute);display:flex;flex-direction:column;gap:4px}
+.qrinfo b{color:var(--foam)}
+.linkbox{font-family:var(--f-mono);font-size:.78rem;color:var(--brass);word-break:break-all}
+.pchips{display:flex;flex-wrap:wrap;gap:6px}
+.pchip{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--grid);border-radius:999px;padding:3px 10px;font-size:.82rem}
+.phonebtn{display:flex;align-items:center;gap:8px}
+.phone{max-width:520px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:14px}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.teamchip{display:flex;align-items:center;gap:8px;font-family:var(--f-display);font-weight:700;font-size:1.6rem;text-transform:uppercase;letter-spacing:.03em;min-width:0}
+.teamchip span:last-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.linkbtn{background:none;border:0;color:var(--mute);text-decoration:underline;font-size:.85rem;padding:4px}
+.pteams{display:grid;gap:10px}
+.pteam{display:flex;align-items:center;gap:12px;background:var(--panel);border:2px solid var(--grid);border-radius:10px;padding:14px 16px;font-size:1.15rem;font-weight:700;text-align:left}
+.pteam:hover{border-color:var(--brass)}
+.pteam .dot{width:16px;height:16px}
+.bigmsg{font-family:var(--f-display);font-weight:900;font-size:clamp(1.8rem,8vw,2.6rem);text-transform:uppercase;line-height:1;margin:0}
+.tabs{display:flex;flex-wrap:wrap;gap:8px}
+.tabs button{display:flex;align-items:center;gap:6px;border:2px solid var(--grid);background:var(--panel);border-radius:999px;padding:6px 12px;font-weight:700}
+.tabs button[aria-pressed="true"]{border-color:var(--hit)}
+.cell.pick{background:var(--brass);border-color:var(--brass);color:#1A1203}
+.firebar{position:sticky;bottom:0;background:var(--ink);padding:10px 0 4px;display:flex;gap:10px}
+.firebar .btn{flex:1;font-size:1.15rem;padding:16px}
+.popts{display:grid;gap:10px}
+.popts .opt{font-size:1.15rem;padding:18px 16px}
+.status{display:flex;flex-direction:column;gap:6px}
+.status li{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:.9rem}
+.status ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.notice{color:var(--mute);margin:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap" id="app"></div>
+
+<script>
+const SHIPS=[["Battleship",4],["Cruiser",3],["Submarine",3],["Destroyer",2],["Patrol boat",2],["Frigate",2],["Dinghy",1],["Raft",1]];
+const MAXSHIPS=SHIPS.length;
+const fleetList=n=>SHIPS.slice(0,n);
+const MAXEACH=3, MINSIZE=6, MAXSIZE=12;
+const capFor=g=>Math.floor(g*g*0.375);
+const MAXCELLS_=()=>capFor(S.size||8);
+function customList(){const out=[];SHIPS.forEach(([nm,l])=>{const k=S.custom[nm]||0;for(let j=1;j<=k;j++)out.push([k>1?nm+" "+j:nm,l])});return out}
+const currentFleet=()=>S.fleetMode==="custom"?customList():fleetList(S.ships);
+const fleetCells=list=>list.reduce((a,x)=>a+x[1],0);
+const COLORS=["#E8B04B","#5EC4FF","#FF7AB6","#7BE38F","#B79CFF","#FF9F43","#4FE0D0","#F5F07A"];
+const ROWS="ABCDEFGHIJKL";
+// [question, [correct, wrong, wrong, wrong]]
+const Q=[
+["Which planet has the most known moons?",["Saturn","Jupiter","Uranus","Neptune"]],
+["How many hearts does an octopus have?",["3","1","2","8"]],
+["What is the only mammal capable of true flight?",["Bat","Flying squirrel","Sugar glider","Colugo"]],
+["Which country has the most islands in the world?",["Sweden","Indonesia","Norway","Philippines"]],
+["What colour is a polar bear's skin?",["Black","White","Pink","Grey"]],
+["How many bones does an adult human have?",["206","186","226","306"]],
+["Which is the largest ocean on Earth?",["Pacific","Atlantic","Indian","Arctic"]],
+["Which animal has fingerprints almost identical to humans?",["Koala","Chimpanzee","Panda","Raccoon"]],
+["On Venus, which lasts longer?",["One day","One year","They are equal","Venus has no days"]],
+["What is the smallest country in the world?",["Vatican City","Monaco","San Marino","Liechtenstein"]],
+["What is the chemical symbol for gold?",["Au","Ag","Gd","Go"]],
+["Which fruit floats because it is about 25% air?",["Apple","Banana","Grape","Mango"]],
+["Botanically speaking, a banana is a…",["Berry","Nut","Drupe","Legume"]],
+["Which planet rotates on its side?",["Uranus","Mars","Neptune","Mercury"]],
+["Roughly how fast does light travel?",["300,000 km/s","30,000 km/s","3,000 km/s","3 million km/s"]],
+["Which blood type is the universal donor?",["O negative","AB positive","A negative","O positive"]],
+["What is the largest organ of the human body?",["Skin","Liver","Brain","Lungs"]],
+["A group of crows is called a…",["Murder","Flock","Parliament","Crowd"]],
+["A group of flamingos is called a…",["Flamboyance","Party","Blush","Fiesta"]],
+["Which language has the most native speakers?",["Mandarin Chinese","English","Spanish","Hindi"]],
+["Counting overseas territories, which country has the most time zones?",["France","Russia","USA","United Kingdom"]],
+["How many minutes are in a full day?",["1,440","1,200","2,400","1,040"]],
+["What is the capital of Australia?",["Canberra","Sydney","Melbourne","Perth"]],
+["What is the capital of Canada?",["Ottawa","Toronto","Montreal","Vancouver"]],
+["Which vertebrate has the longest known lifespan?",["Greenland shark","Galápagos tortoise","Bowhead whale","Koi carp"]],
+["How many teeth does a full adult set have?",["32","28","30","36"]],
+["At sea level, water boils at how many °F?",["212","180","100","232"]],
+["How many keys does a standard piano have?",["88","76","92","64"]],
+["Can you see the Great Wall of China from the Moon with the naked eye?",["No","Yes, easily","Only at night","Only in winter"]],
+["Which country gave the Statue of Liberty to the USA?",["France","United Kingdom","Spain","Italy"]],
+["In which year did the Titanic sink?",["1912","1905","1921","1898"]],
+["Who painted the Mona Lisa?",["Leonardo da Vinci","Michelangelo","Raphael","Botticelli"]],
+["Which planet is closest to the Sun?",["Mercury","Venus","Mars","Earth"]],
+["Which is the hottest planet in the Solar System?",["Venus","Mercury","Mars","Jupiter"]],
+["How many players per team are on a football (soccer) pitch?",["11","10","9","12"]],
+["Where did the ancient Olympic Games originate?",["Greece","Italy","Egypt","Turkey"]],
+["Which is the rarest of the main blood types?",["AB negative","O negative","B positive","A negative"]],
+["Which land mammal famously cannot jump?",["Elephant","Hippo","Rhino","Giraffe"]],
+["How many eyes does a honeybee have?",["5","2","4","8"]],
+["Where is a shrimp's heart located?",["In its head","In its tail","In its legs","It has none"]],
+["What shape is wombat poop?",["Cube","Sphere","Spiral","Pyramid"]],
+["Which country drinks the most coffee per person?",["Finland","Italy","Brazil","USA"]],
+["Which language has the most speakers in total (native + learners)?",["English","Mandarin","Spanish","Arabic"]],
+["Which metal is liquid at room temperature?",["Mercury","Lead","Tin","Gallium"]],
+["Which country has the largest population today?",["India","China","USA","Indonesia"]],
+["What is the largest desert in the world?",["Antarctica","Sahara","Gobi","Arabian"]],
+["How many continents are there?",["7","5","6","8"]],
+["Which famous composer kept composing after becoming deaf?",["Beethoven","Mozart","Bach","Chopin"]],
+["Who wrote Pippi Longstocking?",["Astrid Lindgren","Selma Lagerlöf","Tove Jansson","Roald Dahl"]],
+["With which song did ABBA win Eurovision in 1974?",["Waterloo","Mamma Mia","Dancing Queen","SOS"]],
+["In which year did humans first walk on the Moon?",["1969","1965","1972","1959"]],
+["What does DNA stand for?",["Deoxyribonucleic acid","Dinitrogen acid","Dual nucleic atom","Deoxyribose nitrate"]],
+["Which vitamin does your skin make from sunlight?",["Vitamin D","Vitamin C","Vitamin A","Vitamin B12"]],
+["Which bird lays the largest eggs?",["Ostrich","Emu","Albatross","Condor"]],
+["What is the fastest land animal?",["Cheetah","Pronghorn","Lion","Greyhound"]],
+["What is the largest planet in the Solar System?",["Jupiter","Saturn","Neptune","Earth"]],
+["What is the main ingredient of guacamole?",["Avocado","Pea","Lime","Cucumber"]],
+["The kiwi bird is native to which country?",["New Zealand","Australia","Chile","South Africa"]],
+["Cleopatra lived closer in time to…",["The Moon landing","The building of the Great Pyramid","Both equally","Neither"]],
+["Which gas makes up most of Earth's atmosphere?",["Nitrogen","Oxygen","Carbon dioxide","Argon"]],
+["Marzipan is made mainly from which nut?",["Almond","Hazelnut","Walnut","Cashew"]],
+["Which animal can hold its breath for up to 40 minutes?",["Sloth","Dolphin","Otter","Penguin"]],
+["How many strings does a standard guitar have?",["6","5","7","8"]],
+["Which Nobel Prize is awarded in Oslo instead of Stockholm?",["Peace","Literature","Medicine","Chemistry"]],
+["Which country has the most lakes?",["Canada","Finland","Russia","USA"]],
+["Where is the smallest bone in the human body?",["The ear","The toe","The finger","The nose"]],
+["Compared to the surface of the Sun, a lightning bolt is…",["About 5 times hotter","About half as hot","Exactly as hot","10 times cooler"]],
+["Which planet would float in a giant bathtub of water?",["Saturn","Jupiter","Neptune","Mars"]],
+["What is the national animal of Scotland?",["Unicorn","Red deer","Golden eagle","Lion"]],
+["Which animal has blue blood?",["Octopus","Shark","Frog","Eel"]],
+["How long does sunlight take to reach Earth?",["About 8 minutes","About 8 seconds","About 1 hour","About 1 day"]],
+["Which country's flag is not a rectangle?",["Nepal","Bhutan","Switzerland","Japan"]],
+["What was the first toy advertised on TV?",["Mr. Potato Head","Barbie","LEGO","Slinky"]],
+["Hawaiian pizza was invented in which country?",["Canada","USA","Italy","Australia"]],
+["What is the dot over a lowercase 'i' called?",["Tittle","Jot","Speck","Tilde"]],
+["Which letter does not appear in any US state name?",["Q","Z","X","J"]],
+["How many squares are on a chessboard?",["64","81","56","100"]],
+["Which is the hardest natural substance?",["Diamond","Quartz","Titanium","Granite"]],
+["Which gas do plants absorb from the air?",["Carbon dioxide","Oxygen","Nitrogen","Helium"]],
+["What is the tallest mountain above sea level?",["Mount Everest","K2","Kilimanjaro","Mont Blanc"]],
+["How many legs does a spider have?",["8","6","10","12"]],
+["Which Swedish company was founded in 1943 by Ingvar Kamprad?",["IKEA","Volvo","H&M","Ericsson"]],
+["The croissant's ancestor, the kipferl, comes from which country?",["Austria","France","Belgium","Switzerland"]],
+["How many sides does a hexagon have?",["6","5","7","8"]],
+["Which planet is known as the Red Planet?",["Mars","Venus","Jupiter","Mercury"]],
+];
+
+const LS="quizBattleship.v1";
+let S=load()||{phase:"setup",n:6,ships:5,names:COLORS.map((_,i)=>"Team "+(i+1)),timer:30,teams:[],turn:0,target:null,deck:[],log:[],over:false,showAll:false,pending:null};
+let tick=null, confirmNew=false;
+if(!S.ships)S.ships=5;
+if(!S.fleetMode)S.fleetMode="count";
+if(!S.size)S.size=8;
+if(!S.custom)S.custom=Object.fromEntries(SHIPS.map(([nm],i)=>[nm,i<5?1:0]));
+
+function load(){try{const r=localStorage.getItem(LS);return r?JSON.parse(r):null}catch(e){return null}}
+function save(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}try{pushLive()}catch(e){}}
+const rnd=n=>Math.floor(Math.random()*n);
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const GS=()=>S.gsize||8;
+const coord=i=>ROWS[Math.floor(i/GS())]+(i%GS()+1);
+
+function placeFleet(list,G=8){
+  for(let attempt=0;attempt<1000;attempt++){const loose=attempt>=600;
+    const grid=Array(G*G).fill(-1), ships=[]; let ok=true;
+    for(let s=0;s<list.length&&ok;s++){
+      const len=list[s][1]; let placed=false;
+      for(let t=0;t<200&&!placed;t++){
+        if(len>G){ok=false;break}const h=Math.random()<.5, r=rnd(h?G:G+1-len), c=rnd(h?G+1-len:G);
+        const cells=[...Array(len)].map((_,k)=>(r+(h?0:k))*G+(c+(h?k:0)));
+        const clear=cells.every(i=>{const ri=Math.floor(i/G),ci=i%G;
+          const R=loose?0:1;for(let dr=-R;dr<=R;dr++)for(let dc=-R;dc<=R;dc++){const rr=ri+dr,cc=ci+dc;
+            if(rr>=0&&rr<G&&cc>=0&&cc<G&&grid[rr*G+cc]!==-1)return false}return true});
+        if(clear){cells.forEach(i=>grid[i]=s);ships.push({name:list[s][0],cells,sunk:false});placed=true}
+      }
+      if(!placed)ok=false;
+    }
+    if(ok)return {grid,ships};
+  }
+}
+
+function startGame(){
+  const fl=currentFleet();if(!fl.length||fleetCells(fl)>MAXCELLS_())return;
+  S.gsize=S.size;const G=S.gsize;
+  S.teams=S.names.slice(0,S.n).map((name,i)=>{const f=placeFleet(currentFleet(),G);
+    return {name:name.trim()||("Team "+(i+1)),color:COLORS[i],grid:f.grid,ships:f.ships,shot:Array(G*G).fill(0),hits:0,tries:0,right:0}});
+  S.phase="game";S.gameId=Date.now();S.turn=0;S.deck=[];S.log=[];S.over=false;S.showAll=false;S.pending=null;S.target=null;
+  fixTarget();save();render();
+}
+const solo=()=>S.teams.length===1;
+const afloat=t=>t.ships.some(s=>!s.sunk);
+function validTarget(i){if(i==null||!S.teams[i])return false;if(solo())return afloat(S.teams[0]);return i!==S.turn&&afloat(S.teams[i])}
+function fixTarget(){if(validTarget(S.target))return;S.target=null;
+  for(let k=1;k<=S.teams.length;k++){const i=(S.turn+k)%S.teams.length;if(validTarget(i)){S.target=i;return}}}
+function drawQ(){if(!S.deck.length)S.deck=shuffle(Q.map((_,i)=>i));const q=Q[S.deck.pop()];
+  const order=shuffle([0,1,2,3]);return {text:q[0],opts:order.map(k=>q[1][k]),correct:order.indexOf(0)}}
+function addLog(html){S.log.unshift(html);S.log=S.log.slice(0,40)}
+
+function fire(ti,cell){
+  if(S.over||S.pending||!validTarget(ti))return;const t=S.teams[ti];if(t.shot[cell])return;
+  S.target=ti;
+  S.pending={target:ti,cell,q:drawQ(),answer:null,outcome:null,left:S.timer,id:Date.now(),deadline:S.timer?Date.now()+S.timer*1000:0};
+  save();render();startTimer();
+}
+function startTimer(){clearInterval(tick);if(!S.timer||!S.pending||S.pending.answer!==null)return;
+  tick=setInterval(()=>{const p=S.pending;if(!p||p.answer!==null){clearInterval(tick);return}
+    p.left--;const bar=document.getElementById("tbar"),num=document.getElementById("tnum");
+    if(bar)bar.style.width=(p.left/S.timer*100)+"%";if(num)num.textContent=p.left+"s";
+    if(p.left<=0){clearInterval(tick);answer(-1)}},1000)}
+
+function answer(k){
+  const p=S.pending;if(!p||p.answer!==null)return;clearInterval(tick);
+  p.answer=k;const me=S.teams[S.turn],t=S.teams[p.target],c=coord(p.cell);me.tries++;
+  if(k===p.q.correct){
+    me.right++;
+    if(t.grid[p.cell]>=0){
+      t.shot[p.cell]=2;me.hits++;const ship=t.ships[t.grid[p.cell]];
+      if(ship.cells.every(i=>t.shot[i]===2)){ship.sunk=true;p.outcome="sunk";p.ship=ship.name;
+        addLog(`<b>${esc(me.name)}</b> sank ${esc(t.name)}'s ${ship.name} at ${c}`)}
+      else{p.outcome="hit";addLog(`<b>${esc(me.name)}</b> hit ${esc(t.name)} at ${c}`)}
+      if(!afloat(t)){p.eliminated=true;addLog(`<b>${esc(t.name)}</b> has no ships left`)}
+    }else{t.shot[p.cell]=1;p.outcome="water";addLog(`${esc(me.name)} found water at ${esc(t.name)} ${c}`)}
+  }else{p.outcome="miss";addLog(`${esc(me.name)} answered wrong, shot at ${c} misfired`)}
+  const alive=S.teams.filter(afloat);
+  if(solo()?alive.length===0:alive.length<=1){S.over=true;S.winner=solo()?0:S.teams.indexOf(alive[0])}
+  S.last=(p.outcome==="hit"||p.outcome==="sunk"||p.outcome==="water")?{t:p.target,cell:p.cell}:null;
+  save();render();
+}
+function nextTurn(){
+  const p=S.pending;S.pending=null;setTimeout(()=>{S.last=null;save()},600);
+  if(!S.over&&!solo()){for(let k=1;k<=S.teams.length;k++){const i=(S.turn+k)%S.teams.length;if(afloat(S.teams[i])){S.turn=i;break}}}
+  fixTarget();save();render();
+  if(p&&p.outcome==="miss"){const el=document.querySelector(`[data-cell="${p.cell}"]`);}
+}
+
+/* ---------- Rendering ---------- */
+const app=document.getElementById("app");
+function render(){if(NET.role==="phone")return renderPhone();if(NET.role==="choose")return renderChoose();S.phase==="setup"?renderSetup():renderGame()}
+
+function renderSetup(){
+  app.innerHTML=`
+  <header style="display:flex;flex-direction:column;gap:8px">
+    <span class="eyebrow">Party game · ${S.size} × ${S.size} grid · ${currentFleet().length} ${currentFleet().length===1?"boat":"boats"} per fleet</span>
+    <h1>Quiz <span>Battleship</span></h1>
+  </header>
+  <div class="setup">
+    <section class="card">
+      <span class="eyebrow">How to play</span>
+      <ol class="rules">
+        <li>Every team gets a hidden fleet: <b>${currentFleet().length?currentFleet().map(([nm,l])=>`${nm} (${l})`).join(", "):"no boats chosen yet"}</b>.</li>
+        <li>All fleets are on screen. On your turn, <b>tap a square on any other team's grid</b>.</li>
+        <li>Answer the trivia question. <b>Right answer</b>: the shot fires and shows a hit or water. <b>Wrong answer</b>: the shot misfires and the square stays open.</li>
+        <li>Then the next team plays. A team with no ships left is out.</li>
+        <li>The last fleet afloat wins.</li>
+      </ol>
+    </section>
+    <section class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span class="eyebrow">Number of teams</span>
+          <div class="stepper"><button id="minus" aria-label="Fewer teams">−</button><output id="n">${S.n}</output><button id="plus" aria-label="More teams">+</button></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span class="eyebrow">Board size</span>
+          <div class="stepper"><button id="gminus" aria-label="Smaller board" ${S.size<=MINSIZE?"disabled":""}>−</button><output id="gn" style="min-width:3.2ch">${S.size}×${S.size}</output><button id="gplus" aria-label="Bigger board" ${S.size>=MAXSIZE?"disabled":""}>+</button></div>
+        </div>
+        ${S.fleetMode==="count"?`<div style="display:flex;flex-direction:column;gap:6px">
+          <span class="eyebrow">Boats per team</span>
+          <div class="stepper"><button id="sminus" aria-label="Fewer boats" ${S.ships<=1?"disabled":""}>−</button><output id="sn">${S.ships}</output><button id="splus" aria-label="More boats" ${S.ships>=MAXSHIPS?"disabled":""}>+</button></div>
+        </div>`:""}
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <span class="eyebrow">Answer time</span>
+          <div class="seg" role="group" aria-label="Answer time">
+            ${[0,20,30,45].map(v=>`<button data-timer="${v}" aria-pressed="${S.timer===v}">${v?v+"s":"No limit"}</button>`).join("")}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <span class="eyebrow">Fleet mode</span>
+        <div class="seg" role="group" aria-label="Fleet mode">
+          <button data-mode="count" aria-pressed="${S.fleetMode==="count"}">Number of boats</button>
+          <button data-mode="custom" aria-pressed="${S.fleetMode==="custom"}">Choose boats</button>
+        </div>
+      </div>
+      ${S.fleetMode==="custom"?renderPicker():(()=>{const fl=currentFleet(),c=fleetCells(fl),over=c>MAXCELLS_();return `<div class="ptotal ${over?"warn":""}">${fl.length} ${fl.length===1?"boat":"boats"} · ${c} of ${MAXCELLS_()} squares${over?" · too many for this board, use fewer boats or a bigger board":""}</div>`})()}
+      <span class="eyebrow">Team names</span>
+      <div class="names">${S.names.slice(0,S.n).map((nm,i)=>`
+        <label><span class="dot" style="background:${COLORS[i]}"></span><input id="name${i}" data-name="${i}" value="${esc(nm)}" maxlength="22" aria-label="Team ${i+1} name"></label>`).join("")}</div>
+      ${S.n===1?`<p class="eyebrow" style="margin:0;color:var(--brass)">1 team = practice mode, you fire at your own hidden fleet</p>`:""}
+      ${(()=>{const fl=currentFleet(),c=fleetCells(fl);const bad=!fl.length||c>MAXCELLS_();return `<button class="btn" id="start" style="align-self:flex-start" ${bad?"disabled":""}>Deal the fleets and start</button>`})()}
+    </section>
+  </div>
+  ${NET.role==="host"?`<section class="card"><span class="eyebrow">Play on phones</span>${phonePanel()}</section>`:""}`;
+}
+
+/* ---------- Cell art ---------- */
+const WATER_SVG=`<svg viewBox="0 0 100 100" aria-hidden="true">
+  <path d="M8 40 q10 -9 21 0 t21 0 t21 0 t21 0" fill="none" stroke="#5EA9E0" stroke-width="5" stroke-linecap="round" opacity=".55"/>
+  <path d="M8 74 q10 -9 21 0 t21 0 t21 0 t21 0" fill="none" stroke="#5EA9E0" stroke-width="5" stroke-linecap="round" opacity=".4"/>
+  <ellipse cx="50" cy="58" rx="20" ry="7" fill="none" stroke="#BFE3FF" stroke-width="4"/>
+  <path d="M50 52 L50 26 M40 52 L33 32 M60 52 L67 32" stroke="#E3F3FF" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="50" cy="19" r="5" fill="#E3F3FF"/><circle cx="30" cy="26" r="4" fill="#BFE3FF"/><circle cx="70" cy="26" r="4" fill="#BFE3FF"/>
+</svg>`;
+// part: "one" | "bow" | "mid" | "stern"; drawn horizontally, bow pointing left; rotated for vertical ships
+function hullSvg(part,vertical,state){
+  const hull=state==="sunk"?"#5E6976":"#A9BCCF", deck=state==="sunk"?"#46505B":"#D7E2EC", line=state==="sunk"?"#2E363F":"#5C7085";
+  const shapes={
+    one:"M14 50 Q20 30 40 30 L60 30 Q80 30 86 50 Q80 70 60 70 L40 70 Q20 70 14 50Z",
+    bow:"M6 50 Q22 28 50 30 L101 30 L101 70 L50 70 Q22 72 6 50Z",
+    mid:"M-1 30 L101 30 L101 70 L-1 70Z",
+    stern:"M-1 30 L80 30 Q94 30 94 42 L94 58 Q94 70 80 70 L-1 70Z"};
+  const deckBit={one:`<rect x="40" y="40" width="20" height="20" rx="4" fill="${deck}"/>`,
+    bow:`<circle cx="62" cy="50" r="9" fill="${deck}"/><rect x="62" y="47" width="30" height="6" rx="2" fill="${deck}"/>`,
+    mid:`<rect x="26" y="38" width="48" height="24" rx="4" fill="${deck}"/><circle cx="38" cy="50" r="3.5" fill="${line}"/><circle cx="50" cy="50" r="3.5" fill="${line}"/><circle cx="62" cy="50" r="3.5" fill="${line}"/>`,
+    stern:`<rect x="22" y="40" width="34" height="20" rx="4" fill="${deck}"/><rect x="60" y="46" width="22" height="8" rx="2" fill="${deck}"/>`}[part];
+  const fx=state==="hit"?`<g><circle cx="50" cy="50" r="22" fill="#FF5A3C" opacity=".85"/><circle cx="50" cy="50" r="13" fill="#FFB547"/><circle cx="50" cy="50" r="6" fill="#FFF1C2"/>
+      <path d="M50 18 L54 34 M50 82 L46 66 M18 50 L34 46 M82 50 L66 54" stroke="#FF5A3C" stroke-width="5" stroke-linecap="round"/></g>`
+    :state==="sunk"?`<path d="M30 36 L70 64 M70 36 L30 64" stroke="#FF6B4A" stroke-width="7" stroke-linecap="round" opacity=".9"/>`:"";
+  return `<svg viewBox="0 0 100 100" aria-hidden="true"><g ${vertical?'transform="rotate(90 50 50)"':""}>
+    <path d="${shapes[part]}" fill="${hull}" stroke="${line}" stroke-width="3"/>${deckBit}</g>${fx}</svg>`;
+}
+function shipPart(t,i){
+  const ship=t.ships[t.grid[i]],cells=ship.cells,k=cells.indexOf(i),n=cells.length;
+  const vertical=n>1&&cells[1]-cells[0]!==1;
+  return {part:n===1?"one":k===0?"bow":k===n-1?"stern":"mid",vertical};
+}
+function cellArt(t,i,st){
+  if(st===1)return WATER_SVG;
+  const sid=t.grid[i];if(sid<0)return "";
+  const {part,vertical}=shipPart(t,i);
+  if(st===2)return hullSvg(part,vertical,t.ships[sid].sunk?"sunk":"hit");
+  if(S.showAll)return hullSvg(part,vertical,"ghost");
+  return "";
+}
+
+function renderPicker(){
+  const fl=currentFleet(),cells=fleetCells(fl),over=cells>MAXCELLS_();
+  return `<div class="picker">
+    ${SHIPS.map(([nm,l])=>{const k=S.custom[nm]||0;return `<div class="prow ${k?"on":""}">
+      <div class="pname"><span>${nm}</span><span class="hull">${"<i></i>".repeat(l)}</span><span class="plen">${l} sq</span></div>
+      <div class="pstep"><button data-cminus="${esc(nm)}" aria-label="Fewer ${nm}" ${k<=0?"disabled":""}>−</button><output>${k}</output><button data-cplus="${esc(nm)}" aria-label="More ${nm}" ${k>=MAXEACH?"disabled":""}>+</button></div>
+    </div>`}).join("")}
+    <div class="ptotal ${over||!fl.length?"warn":""}">${fl.length} ${fl.length===1?"boat":"boats"} · ${cells} of ${MAXCELLS_()} squares${over?" · too many to fit, remove some":!fl.length?" · pick at least one boat":""}</div>
+  </div>`;
+}
+
+function renderGame(){
+  const me=S.teams[S.turn], n=S.teams.length;
+  const cols=n<=1?1:n<=4?2:n<=6?3:4;
+  const boards=S.teams.map((t,ti)=>{
+    const out=!afloat(t), isTurn=ti===S.turn&&!S.over&&!solo(), aim=S.pending&&S.pending.target===ti;
+    const canFire=!S.over&&!S.pending&&validTarget(ti);
+    const tag=out?`<span class="tag dead">SUNK</span>`:isTurn?`<span class="tag fire">FIRING · OWN FLEET</span>`:aim?`<span class="tag aim">TARGET</span>`:"";
+    const G=GS();let g=`<span></span>`+[...Array(G)].map((_,c)=>`<span class="lab">${c+1}</span>`).join("");
+    for(let r=0;r<G;r++){g+=`<span class="lab">${ROWS[r]}</span>`;
+      for(let c=0;c<G;c++){const i=r*G+c,st=t.shot[i],sid=t.grid[i];
+        let cls="cell";if(st===2)cls+=" hit"+(t.ships[sid].sunk?" sunk":"");else if(st===1)cls+=" water";else{cls+=" open";if(S.showAll&&sid>=0)cls+=" ghost"}
+        if(S.last&&S.last.t===ti&&S.last.cell===i)cls+=" just";
+        const can=canFire&&!st;
+        g+=`<button class="${cls}" data-t="${ti}" data-cell="${i}" aria-label="${esc(t.name)} ${coord(i)}${st===2?" hit":st===1?" water":""}" ${can?"":"disabled"}>${!st?coord(i):""}${cellArt(t,i,st)}</button>`}}
+    return `<section class="boardbox ${isTurn?"turn mine":""} ${out?"out":""}">${tag}
+      <div class="boardhead"><h2 style="color:${t.color}"><span class="dot" style="background:${t.color}"></span><span>${esc(t.name)}</span></h2>
+        <span class="boardmeta"><span class="pips">${t.ships.map(s=>`<span class="pip ${s.sunk?"sunk":""}" title="${s.name}${s.sunk?" (sunk)":""}"></span>`).join("")}</span><span>${t.hits} hits · ${t.right}/${t.tries} right</span></span></div>
+      <div class="board" style="--g:${G}">${g}</div></section>`}).join("");
+
+  const overHtml=S.over?`<div class="banner"><div style="display:flex;flex-direction:column;gap:4px">
+      <span class="eyebrow">Battle over</span>
+      <strong>${solo()?"All ships found!":esc(S.teams[S.winner].name)+" wins"}</strong></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn ghost" id="reveal">${S.showAll?"Hide fleets":"Reveal all fleets"}</button><button class="btn" id="again">New game</button></div></div>`:"";
+
+  app.innerHTML=`
+  <div class="top">
+    <div style="display:flex;flex-direction:column;gap:4px"><span class="eyebrow">Quiz Battleship${!S.over&&!solo()?" · tap a square on any other fleet":""}</span>
+      <h1>${S.over?"Ceasefire":solo()?"<span>Practice</span> run":`<span style="color:${me.color}">${esc(me.name)}</span> fires`}</h1></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${NET.role==="host"?`<button class="btn ghost phonebtn" id="phones">📱 Phones <span class="phonecount">${phoneCount()}</span></button>`:""}<button class="btn ${confirmNew?"danger":"ghost"}" id="menu">${confirmNew?"Tap again to end this game":"New game"}</button></div>
+  </div>
+  ${overHtml}
+  <div class="seas" style="--cols:${cols}">${boards}</div>
+  <div class="bottom">
+    <section class="side card">
+      <span class="eyebrow">Ship's log</span>
+      <ul class="log">${S.log.length?S.log.map(l=>`<li><span class="k">›</span><span>${l}</span></li>`).join(""):`<li>No shots yet. Pick a square to fire the first one.</li>`}</ul>
+    </section>
+    <div class="legend" style="flex-direction:column;gap:8px"><span><i class="sw" style="background:var(--panel);border:1px solid var(--line)"></i>Unknown</span><span><i class="sw svg" style="background:#0C2A44">${WATER_SVG}</i>Water</span><span><i class="sw svg" style="background:#14395C">${hullSvg("one",false,"hit")}</i>Hit</span><span><i class="sw svg" style="background:#3A1A16">${hullSvg("one",false,"sunk")}</i>Sunk ship</span></div>
+  </div>
+  ${S.pending?renderQ():""}
+  ${NET.role==="host"&&NET.showPhones&&!S.pending?`<div class="overlay" role="dialog" aria-modal="true" aria-label="Play on phones"><div class="qcard"><div class="qmeta"><span class="eyebrow">Play on phones</span><button class="btn ghost" id="closephones">Close</button></div>${phonePanel()}</div></div>`:""}`;
+}
+
+function renderQ(){
+  const p=S.pending,q=p.q,me=S.teams[S.turn],t=S.teams[p.target],done=p.answer!==null;
+  const L="ABCD";
+  const opts=q.opts.map((o,k)=>{let cls="opt";if(done){if(k===q.correct)cls+=" right";else if(k===p.answer)cls+=" wrong"}
+    return `<button class="${cls}" data-opt="${k}" ${done?"disabled":""}><span class="l">${L[k]}</span><span>${esc(o)}</span></button>`}).join("");
+  let res="";
+  if(done){const map={hit:["Hit!","hit",`Direct hit on ${esc(t.name)} at ${coord(p.cell)}.`],
+      sunk:["Sunk!","hit",`${esc(t.name)}'s ${p.ship} goes down.${p.eliminated?" Their whole fleet is gone.":""}`],
+      water:["Splash","water",`Correct answer, but ${coord(p.cell)} is open water.`],
+      miss:["Misfire","miss",p.answer===-1?"Time ran out. The square stays open.":"Wrong answer. The square stays open."]}[p.outcome];
+    res=`<div class="result"><div><div class="big ${map[1]}">${map[0]}</div><p>${map[2]}</p></div>
+      <button class="btn" id="next">${S.over?"See the result":solo()?"Next shot":"Next team"}</button></div>`}
+  return `<div class="overlay" role="dialog" aria-modal="true" aria-label="Question"><div class="qcard">
+    <div class="qmeta"><span class="eyebrow"><span style="color:${me.color}">${esc(me.name)}</span> → ${esc(t.name)} · ${coord(p.cell)}</span>
+      ${S.timer&&!done?`<span class="eyebrow" id="tnum" style="color:var(--brass)">${p.left}s</span>`:""}</div>
+    ${S.timer&&!done?`<div class="timer"><i id="tbar" style="width:${p.left/S.timer*100}%"></i></div>`:""}
+    <p class="qtext">${esc(q.text)}</p>
+    <div class="opts">${opts}</div>${res}</div></div>`;
+}
+
+/* ---------- Events ---------- */
+app.addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;
+  if(b.id==="asHost"||b.id==="asPhone"){setRole(b.id==="asHost"?"host":"phone");return}
+  if(NET.role==="phone"){phoneClick(b);return}
+  if(b.id==="phones"){NET.showPhones=true;render();return}
+  if(b.id==="closephones"){NET.showPhones=false;render();return}
+  if(b.id==="switchrole"){setRole("phone");return}
+  if(b.id!=="menu"&&confirmNew){confirmNew=false}
+  if(b.id==="minus"){S.n=Math.max(1,S.n-1);save();render()}
+  else if(b.id==="plus"){S.n=Math.min(8,S.n+1);save();render()}
+  else if(b.id==="sminus"){S.ships=Math.max(1,S.ships-1);save();render()}
+  else if(b.id==="splus"){S.ships=Math.min(MAXSHIPS,S.ships+1);save();render()}
+  else if(b.id==="gminus"){S.size=Math.max(MINSIZE,S.size-1);save();render()}
+  else if(b.id==="gplus"){S.size=Math.min(MAXSIZE,S.size+1);save();render()}
+  else if(b.dataset.mode){S.fleetMode=b.dataset.mode;save();render()}
+  else if(b.dataset.cminus!=null){const nm=b.dataset.cminus;S.custom[nm]=Math.max(0,(S.custom[nm]||0)-1);save();render()}
+  else if(b.dataset.cplus!=null){const nm=b.dataset.cplus;S.custom[nm]=Math.min(MAXEACH,(S.custom[nm]||0)+1);save();render()}
+  else if(b.dataset.timer!=null){S.timer=+b.dataset.timer;save();render()}
+  else if(b.id==="start")startGame();
+  else if(b.dataset.team!=null&&!S.pending&&!S.over){const i=+b.dataset.team;if(validTarget(i)){S.target=i;save();render()}}
+  else if(b.dataset.cell!=null&&!S.over)fire(+b.dataset.t,+b.dataset.cell);
+  else if(b.dataset.opt!=null)answer(+b.dataset.opt);
+  else if(b.id==="next")nextTurn();
+  else if(b.id==="reveal"){S.showAll=!S.showAll;save();render()}
+  else if(b.id==="again"){S.phase="setup";S.pending=null;save();render()}
+  else if(b.id==="menu"){if(S.over||confirmNew){confirmNew=false;clearInterval(tick);S.phase="setup";S.pending=null;save();render()}else{confirmNew=true;render()}}
+  else if(confirmNew===false&&document.getElementById("menu"))render();
+});
+app.addEventListener("input",e=>{const i=e.target.dataset.name;if(i!=null){S.names[+i]=e.target.value;save()}});
+document.addEventListener("keydown",e=>{if(NET.role==="phone"||NET.role==="choose"||!S.pending)return;
+  if(S.pending.answer===null){const k="abcd1234".indexOf(e.key.toLowerCase());if(k>=0)answer(k%4)}
+  else if(e.key==="Enter"||e.key===" "){e.preventDefault();nextTurn()}});
+
+/* ---------- Phone mode ---------- */
+const GAME_URL="https://claude.ai/artifact/BTzRMGvFTSckFsztt8bARP";
+const ROLE_KEY=LS+".role", TEAM_KEY=LS+".team";
+const NET={role:"local",room:null,db:null,live:null,peers:[],pub:null,phoneErr:"",myTeam:null,aim:null,pick:null,sent:0,showPhones:false,qr:null,canEdit:false};
+try{const v=localStorage.getItem(TEAM_KEY);if(v!=null&&v!=="")NET.myTeam=+v}catch(e){}
+function use(n){try{return window.claude&&typeof window.claude.use==="function"?Promise.resolve(window.claude.use(n)).catch(()=>null):Promise.resolve(null)}catch(e){return Promise.resolve(null)}}
+const unesc=h=>String(h).replace(/<[^>]+>/g,"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&amp;/g,"&");
+
+// --- what the TV shares: only what everyone can already see on the TV ---
+function pubState(){
+  const base={phase:S.phase,turn:S.turn||0,over:!!S.over,winner:S.over?(S.winner??null):null,size:S.gsize||8,game:S.gameId||0};
+  if(S.phase!=="game"){base.teams=S.names.slice(0,S.n).map((nm,i)=>({name:nm.trim()||("Team "+(i+1)),color:COLORS[i]}));base.pending=null;base.log=[];return base}
+  base.teams=S.teams.map(t=>({name:t.name,color:t.color,shots:t.shot.map((v,i)=>v===2&&t.ships[t.grid[i]].sunk?3:v).join(""),
+    left:t.ships.filter(x=>!x.sunk).length,total:t.ships.length,hits:t.hits,right:t.right,tries:t.tries}));
+  const p=S.pending;
+  base.pending=p?{id:p.id||0,target:p.target,cell:p.cell,text:p.q.text,opts:p.q.opts,deadline:p.deadline||0,
+    answered:p.answer!==null,answer:p.answer,correct:p.answer!==null?p.q.correct:null,outcome:p.outcome||null,ship:p.ship||null,eliminated:!!p.eliminated}:null;
+  base.log=S.log.slice(0,4).map(unesc);
+  return base;
+}
+let liveBusy=false,liveDirty=false,lastLive="";
+async function pushLive(){
+  if(NET.role!=="host"||!NET.live)return;
+  if(liveBusy){liveDirty=true;return}
+  const st=pubState(),js=JSON.stringify(st);if(js===lastLive)return;
+  liveBusy=true;lastLive=js;
+  try{await NET.live.set(st)}catch(e){lastLive="";console.warn("Could not share game state",e)}
+  liveBusy=false;if(liveDirty){liveDirty=false;pushLive()}
+}
+
+// --- QR code ---
+function loadScript(src){return new Promise((ok,no)=>{const sc=document.createElement("script");sc.src=src;sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)})}
+let qrLoading=null;
+function loadQR(){if(!qrLoading)qrLoading=loadScript("https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js")
+  .catch(()=>loadScript("https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"))
+  .then(()=>{try{const q=qrcode(0,"M");q.addData(GAME_URL);q.make();const n=q.getModuleCount();let d="";
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))d+=`M${c+2} ${r+2}h1v1h-1z`;
+    NET.qr=`<svg viewBox="0 0 ${n+4} ${n+4}" shape-rendering="crispEdges" role="img" aria-label="QR code for the game link"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`}catch(e){NET.qr=""}})
+  .catch(()=>{NET.qr=""}).then(refreshPhones);return qrLoading}
+const phoneCount=()=>NET.peers.filter(p=>!p.isMe&&p.presence&&typeof p.presence.team==="number").length;
+function phonePanel(){
+  const teams=S.phase==="game"?S.teams:S.names.slice(0,S.n).map((nm,i)=>({name:nm.trim()||("Team "+(i+1)),color:COLORS[i]}));
+  const byTeam=teams.map((_,i)=>NET.peers.filter(p=>!p.isMe&&p.presence&&p.presence.team===i).length);
+  const ready=!!(NET.room&&NET.live);
+  return `<div class="qrwrap phonepanel">
+    <div class="qrbox">${NET.qr?NET.qr:NET.qr===""?"QR code unavailable. Use the link.":"Loading QR code…"}</div>
+    <div class="qrinfo">
+      <ol>
+        <li>In the <b>Share</b> menu, invite each player so they can <b>interact</b> (view-only can't play).</li>
+        <li>Players scan the code signed in to <b>claude.ai</b> and pick their team.</li>
+        <li>On their turn they choose a square and answer on the phone. This screen updates live.</li>
+      </ol>
+      <span class="linkbox">${esc(GAME_URL)}</span>
+      ${ready?`<div class="pchips">${teams.map((t,i)=>`<span class="pchip"><span class="dot" style="background:${t.color}"></span>${esc(t.name)} · ${byTeam[i]} 📱</span>`).join("")}</div>`
+        :`<p class="notice" style="color:var(--bad)">Live connection isn't available on this screen right now, so phones can't connect.</p>`}
+      <button class="linkbtn" id="switchrole" style="align-self:flex-start">Use this device as a player instead</button>
+    </div></div>`;
+}
+function refreshPhones(){
+  if(NET.role!=="host")return;
+  document.querySelectorAll(".phonepanel").forEach(el=>{el.outerHTML=phonePanel()});
+  document.querySelectorAll(".phonecount").forEach(el=>{el.textContent=phoneCount()});
+}
+
+// --- role ---
+function renderChoose(){
+  app.innerHTML=`<div class="phone" style="margin-top:6vh">
+    <span class="eyebrow">Quiz Battleship</span>
+    <h1>How is this <span>screen</span> used?</h1>
+    <p class="notice">You can edit this game, so you can run it as the main screen or play from this device. Your choice is remembered on this device.</p>
+    <button class="pteam" id="asHost"><span style="font-size:1.6rem">📺</span><span>Main screen (TV)<br><span class="notice" style="font-weight:500;font-size:.9rem">Shows all boards and runs the game</span></span></button>
+    <button class="pteam" id="asPhone"><span style="font-size:1.6rem">📱</span><span>Player phone<br><span class="notice" style="font-weight:500;font-size:.9rem">Pick a team, aim and answer</span></span></button>
+  </div>`;
+}
+function setRole(role){try{localStorage.setItem(ROLE_KEY,role)}catch(e){}startRole(role)}
+let hostWired=false,phoneWired=false,phoneTimer=null;
+function startRole(role){
+  NET.role=role;
+  if(role==="host"){
+    if(NET.db&&!NET.live)NET.live=NET.db.doc("live/state");
+    if(NET.room&&!hostWired){hostWired=true;
+      const onPhone=(topic,fn)=>NET.room.on(topic,m=>{if(m.sameTab||NET.role!=="host")return;try{fn(m.data||{})}catch(e){}});
+      onPhone("fire",d=>{if(S.phase!=="game"||S.over||S.pending||+d.team!==S.turn)return;const ti=+d.target,cell=+d.cell;
+        if(!S.teams[ti]||!Number.isInteger(cell)||cell<0||cell>=S.teams[ti].shot.length)return;fire(ti,cell)});
+      onPhone("answer",d=>{const p=S.pending;if(!p||p.answer!==null||+d.team!==S.turn||d.id!==p.id)return;const k=+d.k;if(Number.isInteger(k)&&k>=0&&k<4)answer(k)});
+      onPhone("next",d=>{const p=S.pending;if(!p||p.answer===null||+d.team!==S.turn||d.id!==p.id)return;nextTurn()});
+      NET.room.onPeers(c=>{NET.peers=c.peers;refreshPhones()});
+    }
+    loadQR();lastLive="";render();pushLive();
+  }else{
+    clearInterval(tick);
+    if(!NET.room||!NET.db){NET.phoneErr="This device can't join live games here. Open the game link on claude.ai while signed in.";render();return}
+    if(!NET.live)NET.live=NET.db.doc("live/state");
+    if(!phoneWired){phoneWired=true;
+      let waiting=setTimeout(()=>{if(!NET.pub){NET.phoneErr="Can't reach the game yet. Make sure the main screen has the game open.";render()}},10000);
+      NET.live.onSnapshot(sn=>{if(!sn.fromCache){clearTimeout(waiting)}
+        NET.phoneErr="";const prev=NET.pub;NET.pub=sn.exists?sn.data():null;
+        if(!prev||!NET.pub||prev.game!==NET.pub.game||prev.turn!==NET.pub.turn||JSON.stringify(prev.pending)!==JSON.stringify(NET.pub.pending)){NET.sent=0}
+        if(NET.pub&&NET.pub.pending)NET.pick=null;
+        render()},
+        ()=>{clearTimeout(waiting);NET.phoneErr="Lost the connection to the game. Reload the page to try again.";render()});
+      phoneTimer=setInterval(()=>{const el=document.getElementById("ptime"),p=NET.pub&&NET.pub.pending;if(el&&p&&p.deadline){el.textContent=Math.max(0,Math.ceil((p.deadline-Date.now())/1000))+"s"}},500);
+    }
+    if(NET.myTeam!=null)NET.room.presence({team:NET.myTeam}).catch(()=>{});
+    render();
+  }
+}
+
+// --- phone screen ---
+function phoneSend(topic,data){
+  NET.sent=Date.now();render();
+  NET.room.emit(topic,data).catch(e=>{NET.sent=0;
+    NET.phoneErr=e&&e.code==="not_permitted"?"You can watch, but not play. Ask the host to give you access to interact with the game (Share menu).":"Couldn't send that. Try again.";
+    render();setTimeout(()=>{if(NET.phoneErr){NET.phoneErr="";render()}},6000)});
+  setTimeout(()=>{if(NET.sent&&Date.now()-NET.sent>=7000){NET.sent=0;render()}},7100);
+}
+function phoneClick(b){
+  const P=NET.pub;
+  if(b.dataset.join!=null){NET.myTeam=+b.dataset.join;try{localStorage.setItem(TEAM_KEY,NET.myTeam)}catch(e){};NET.room&&NET.room.presence({team:NET.myTeam}).catch(()=>{});render();return}
+  if(b.id==="changeteam"){NET.myTeam=null;try{localStorage.removeItem(TEAM_KEY)}catch(e){};NET.room&&NET.room.presence({team:null}).catch(()=>{});render();return}
+  if(b.id==="switchhost"){setRole("host");return}
+  if(!P||NET.sent)return;
+  if(b.dataset.aim!=null){NET.aim=+b.dataset.aim;NET.pick=null;render();return}
+  if(b.dataset.pcell!=null){NET.pick=+b.dataset.pcell;render();return}
+  if(b.id==="pfire"&&NET.pick!=null){phoneSend("fire",{team:NET.myTeam,target:NET.aim,cell:NET.pick});return}
+  if(b.dataset.popt!=null&&P.pending){phoneSend("answer",{team:NET.myTeam,id:P.pending.id,k:+b.dataset.popt});return}
+  if(b.id==="pnext"&&P.pending){phoneSend("next",{team:NET.myTeam,id:P.pending.id});return}
+}
+const pcoord=(i,G)=>ROWS[Math.floor(i/G)]+(i%G+1);
+function renderPhone(){
+  const P=NET.pub,L="ABCD";
+  const head=t=>`<div class="phead"><div class="teamchip" style="color:${t.color}"><span class="dot" style="background:${t.color}"></span><span>${esc(t.name)}</span></div><button class="linkbtn" id="changeteam">Change team</button></div>`;
+  let body="";
+  if(NET.phoneErr)body+=`<p class="notice" style="color:var(--bad)">${esc(NET.phoneErr)}</p>`;
+  if(!P){
+    body+=NET.phoneErr?"":`<p class="bigmsg">Connecting<span style="color:var(--brass)">…</span></p><p class="notice">Waiting for the main screen. Make sure the game is open on the TV.</p>`;
+  }else if(NET.myTeam==null||NET.myTeam>=P.teams.length){
+    body+=`<span class="eyebrow">Pick your team</span><div class="pteams">${P.teams.map((t,i)=>`<button class="pteam" data-join="${i}"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`).join("")}</div>`;
+  }else if(P.phase!=="game"){
+    body+=head(P.teams[NET.myTeam])+`<p class="bigmsg">Get ready</p><p class="notice">Waiting for the host to deal the fleets.</p>`;
+  }else{
+    const me=P.teams[NET.myTeam],cur=P.teams[P.turn],mine=P.turn===NET.myTeam&&!P.over,p=P.pending,G=P.size;
+    body+=head(me);
+    if(P.over){
+      body+=`<p class="bigmsg" style="color:var(--brass)">${P.teams.length===1?"All ships found!":esc(P.teams[P.winner]?P.teams[P.winner].name:"")+" wins"}</p><p class="notice">${P.winner===NET.myTeam?"Congratulations, captain!":"Good battle. Wait for the host to start a new game."}</p>`;
+    }else if(p&&!p.answered){
+      const tgt=P.teams[p.target];
+      body+=`<div class="qmeta"><span class="eyebrow"><span style="color:${cur.color}">${esc(cur.name)}</span> → ${esc(tgt.name)} · ${pcoord(p.cell,G)}</span>${p.deadline?`<span class="eyebrow" id="ptime" style="color:var(--brass)">${Math.max(0,Math.ceil((p.deadline-Date.now())/1000))}s</span>`:""}</div>
+        <p class="qtext">${esc(p.text)}</p>
+        ${mine?`<div class="popts">${p.opts.map((o,k)=>`<button class="opt" data-popt="${k}" ${NET.sent?"disabled":""}><span class="l">${L[k]}</span><span>${esc(o)}</span></button>`).join("")}</div>${NET.sent?`<p class="notice">Answer sent…</p>`:""}`
+          :`<p class="notice">${esc(cur.name)} is answering. Watch the TV!</p>`}`;
+    }else if(p&&p.answered){
+      const map={hit:["Hit!","var(--hit)"],sunk:["Sunk!","var(--hit)"],water:["Splash","var(--mute)"],miss:["Misfire","var(--bad)"]}[p.outcome]||["",""];
+      body+=`<p class="bigmsg" style="color:${map[1]}">${map[0]}</p><p class="notice">${esc(p.text)}<br>Answer: <b style="color:var(--ok)">${esc(p.opts[p.correct])}</b>${p.ship?`<br>${esc(P.teams[p.target].name)}'s ${esc(p.ship)} went down.`:""}</p>
+        ${mine?`<div class="firebar"><button class="btn" id="pnext" ${NET.sent?"disabled":""}>${NET.sent?"Sending…":"Next team"}</button></div>`:`<p class="notice">Waiting for ${esc(cur.name)} to continue.</p>`}`;
+    }else if(mine){
+      const solo=P.teams.length===1,targets=P.teams.map((t,i)=>i).filter(i=>(solo||i!==NET.myTeam)&&P.teams[i].left>0);
+      if(NET.aim==null||!targets.includes(NET.aim)){NET.aim=targets[0];NET.pick=null}
+      const t=P.teams[NET.aim];
+      let g=`<span></span>`+[...Array(G)].map((_,c)=>`<span class="lab">${c+1}</span>`).join("");
+      for(let r=0;r<G;r++){g+=`<span class="lab">${ROWS[r]}</span>`;for(let c=0;c<G;c++){const i=r*G+c,st=+t.shots[i];
+        const cls=st===1?"cell water":st===2?"cell hit":st===3?"cell hit sunk":"cell open"+(NET.pick===i?" pick":"");
+        const art=st===1?WATER_SVG:st===2?hullSvg("one",false,"hit"):st===3?hullSvg("one",false,"sunk"):"";
+        g+=`<button class="${cls}" ${st?"disabled":`data-pcell="${i}"`} aria-label="${pcoord(i,G)}">${!st&&NET.pick===i?pcoord(i,G):""}${art}</button>`}}
+      body+=`<p class="bigmsg" style="color:var(--brass)">Your turn</p><span class="eyebrow">Choose a fleet to attack</span>
+        <div class="tabs">${targets.map(i=>`<button data-aim="${i}" aria-pressed="${i===NET.aim}"><span class="dot" style="background:${P.teams[i].color}"></span>${esc(P.teams[i].name)}</button>`).join("")}</div>
+        <div class="boardbox"><div class="board" style="--g:${G}">${g}</div></div>
+        <div class="firebar"><button class="btn" id="pfire" ${NET.pick==null||NET.sent?"disabled":""}>${NET.sent?"Firing…":NET.pick==null?"Tap a square to aim":"Fire at "+pcoord(NET.pick,G)}</button></div>`;
+    }else{
+      body+=`<p class="bigmsg"><span style="color:${cur.color}">${esc(cur.name)}</span> is aiming</p><p class="notice">Watch the TV. You'll get the controls on your turn.</p>`;
+    }
+    if(!P.over)body+=`<section class="card status"><span class="eyebrow">Fleets</span><ul>${P.teams.map((t,i)=>`<li><span style="display:flex;align-items:center;gap:6px"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}${i===NET.myTeam?" (you)":""}</span><span>${t.left}/${t.total} ships · ${t.right}/${t.tries} right</span></li>`).join("")}</ul>
+      ${P.log&&P.log.length?`<span class="eyebrow">Latest</span><ul>${P.log.slice(0,3).map(l=>`<li>${esc(l)}</li>`).join("")}</ul>`:""}</section>`;
+  }
+  if(NET.canEdit)body+=`<button class="linkbtn" id="switchhost" style="align-self:center">Use this device as the main screen</button>`;
+  app.innerHTML=`<div class="phone">${body}</div>`;
+}
+
+async function initNet(){
+  const [user,room,db]=await Promise.all([use("user"),use("room"),use("db")]);
+  if(!user&&!room&&!db)return; // a plain copy of the page: keep single-screen play
+  NET.room=room;NET.db=db;NET.canEdit=user?!!(await user.canEdit()):false;
+  let saved=null;try{saved=localStorage.getItem(ROLE_KEY)}catch(e){}
+  if(!NET.canEdit)startRole("phone");
+  else if(saved==="host"||saved==="phone")startRole(saved);
+  else{NET.role="choose";render()}
+}
+
+function boot(data){if(data&&data.S)S=data.S;render();startTimer()}
+window.claude?.hot?.snapshot?.(()=>({S}));
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+initNet();
+</script>
+
+</body>
+</html>
